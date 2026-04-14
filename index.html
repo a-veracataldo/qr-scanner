@@ -24,8 +24,6 @@
     .nav-btn{background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 16px}
     .nav-btn .icon{font-size:22px;transition:.2s}.nav-btn .label{font-size:10px;font-weight:600;letter-spacing:.5px;color:#4b5563;transition:.2s}
     .nav-btn.active .label{color:#00d4aa}.nav-btn.active .icon{filter:none}.nav-btn:not(.active) .icon{filter:grayscale(1) opacity(.4)}
-
-    /* Auth */
     .auth{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:32px;text-align:center}
     .auth-icon{font-size:64px;margin-bottom:24px}
     .auth-title{font-size:22px;font-weight:700;margin-bottom:8px}
@@ -35,8 +33,6 @@
     .pin-box:focus{border-color:#00d4aa}
     .btn-primary{width:100%;max-width:300px;padding:16px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#0a0a0a;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif}
     .btn-primary:disabled{background:#374151;color:#6b7280}
-
-    /* Scanner */
     .scanner{position:relative;width:100%;height:100%;background:#000;overflow:hidden}
     #video{width:100%;height:100%;object-fit:cover;display:block}
     #canvas{display:none}
@@ -51,8 +47,6 @@
     .scan-status{position:absolute;bottom:30px;left:0;right:0;text-align:center;z-index:10}
     .scan-status p{color:#00d4aa;font-size:14px;font-weight:500;font-family:'JetBrains Mono',monospace;background:rgba(0,0,0,.7);display:inline-block;padding:8px 24px;border-radius:20px}
     .scan-count{position:absolute;top:16px;right:16px;z-index:10;background:rgba(0,0,0,.7);padding:6px 14px;border-radius:12px;font-size:12px;color:#00d4aa;font-family:'JetBrains Mono',monospace}
-
-    /* Result overlay */
     .overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(10px);animation:fadeIn .3s}
     @keyframes fadeIn{from{opacity:0}to{opacity:1}}
     .result-card{background:#111827;border-radius:24px;padding:36px 28px;text-align:center;max-width:320px;width:90%;border:1px solid #1e3a2f;animation:popIn .4s cubic-bezier(.34,1.56,.64,1)}
@@ -65,8 +59,6 @@
     .result-name.ok{color:#00d4aa}.result-name.err{color:#ef4444}
     .result-msg{color:#6b7280;font-size:13px;margin-bottom:20px;font-family:'JetBrains Mono',monospace}
     .btn-outline{padding:12px 40px;background:transparent;color:#00d4aa;border:1px solid #1e3a2f;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif}
-
-    /* History */
     .history{padding:20px 16px}
     .history h2{font-size:18px;font-weight:700;margin-bottom:16px}
     .stats{background:linear-gradient(135deg,#111827,#0f1520);border-radius:16px;padding:16px;margin-bottom:16px;display:flex;gap:16px;border:1px solid #1e293b}
@@ -77,8 +69,6 @@
     .item-name{font-size:14px;font-weight:600}.item-sub{color:#6b7280;font-size:11px;margin-top:2px}
     .item-time{color:#6b7280;font-size:12px;font-family:'JetBrains Mono',monospace;margin-left:auto}
     .empty{text-align:center;padding:40px;color:#4b5563}
-
-    /* Settings */
     .settings{padding:20px 16px}
     .settings h2{font-size:18px;font-weight:700;margin-bottom:16px}
     .s-item{display:flex;align-items:center;gap:14px;padding:16px;background:#111827;border-radius:14px;margin-bottom:8px;border:1px solid #1e293b}
@@ -90,7 +80,6 @@
   </style>
 </head>
 <body>
-
   <div class="header">
     <div><h1><span>QR</span> Scanner</h1><div class="header-sub" id="headerSub">Conectando...</div></div>
     <div class="dot" id="dot"></div>
@@ -104,52 +93,25 @@
   <div class="overlay" id="overlay" style="display:none"></div>
 
 <script>
-// ============================================================
-// CONFIGURACIÓN - PON TU URL DE APPS SCRIPT AQUÍ
-// ============================================================
 var API_URL = 'https://script.google.com/macros/s/AKfycbz-JNimtGxLElST94H1fXsnZNN3hYyA1REb9qe1VxXObQt3H86XJ_oXdiz3M-VFFlKC2w/exec';
-
-// ============================================================
-// ESTADO
-// ============================================================
 var devicePin = null, deviceDesc = '', history = [], stream = null, timer = null, processing = false;
 
-// ============================================================
-// API - Comunicación con Google Sheets via JSONP
-// ============================================================
 function apiCall(params, callback) {
-  var cbName = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
-  var script = document.createElement('script');
-
-  window[cbName] = function(data) {
-    callback(null, data);
-    delete window[cbName];
-    if (script.parentNode) script.parentNode.removeChild(script);
-  };
-
-  script.onerror = function() {
-    callback('Error de conexión');
-    delete window[cbName];
-    if (script.parentNode) script.parentNode.removeChild(script);
-  };
-
-  // Timeout de 15 segundos
-  setTimeout(function() {
-    if (window[cbName]) {
-      callback('Timeout - sin respuesta del servidor');
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    }
-  }, 15000);
-
-  var url = API_URL + '?' + params + '&callback=' + cbName;
-  script.src = url;
-  document.head.appendChild(script);
+  fetch(API_URL + '?' + params, { redirect: 'follow' })
+    .then(function(r) { return r.text(); })
+    .then(function(text) {
+      try {
+        callback(null, JSON.parse(text));
+      } catch(e) {
+        var match = text.match(/\{[\s\S]*?\}/);
+        if (match) {
+          try { callback(null, JSON.parse(match[0])); } catch(e2) { callback('Respuesta inválida'); }
+        } else { callback('Respuesta inválida del servidor'); }
+      }
+    })
+    .catch(function(err) { callback('Error de conexión: ' + err.message); });
 }
 
-// ============================================================
-// INIT
-// ============================================================
 function init() {
   try {
     devicePin = localStorage.getItem('qr_pin');
@@ -160,29 +122,21 @@ function init() {
   if (devicePin) showApp(); else showAuth();
 }
 
-// ============================================================
-// AUTH
-// ============================================================
 function showAuth() {
   document.getElementById('nav').style.display = 'none';
   document.getElementById('headerSub').textContent = 'Autorización requerida';
   document.getElementById('dot').className = 'dot off';
-
   document.getElementById('content').innerHTML =
     '<div class="auth"><div class="auth-icon">🔐</div>' +
     '<div class="auth-title">Autorizar Dispositivo</div>' +
     '<div class="auth-sub">Ingresa el PIN del dispositivo.<br>Solo una vez.</div>' +
     '<div class="pin-row">' +
-    '<input class="pin-box" type="tel" maxlength="1">' +
-    '<input class="pin-box" type="tel" maxlength="1">' +
-    '<input class="pin-box" type="tel" maxlength="1">' +
-    '<input class="pin-box" type="tel" maxlength="1">' +
-    '<input class="pin-box" type="tel" maxlength="1">' +
-    '<input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1"><input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1"><input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1"><input class="pin-box" type="tel" maxlength="1">' +
     '</div>' +
     '<button class="btn-primary" id="btnAuth" onclick="doAuth()" disabled>Autorizar</button>' +
     '<div id="authErr" style="color:#ef4444;font-size:13px;margin-top:16px;display:none"></div></div>';
-
   var inputs = document.querySelectorAll('.pin-box');
   inputs.forEach(function(inp, i) {
     inp.addEventListener('input', function() {
@@ -202,26 +156,18 @@ function doAuth() {
   inputs.forEach(function(x) { pin += x.value; });
   var btn = document.getElementById('btnAuth'), err = document.getElementById('authErr');
   btn.disabled = true; btn.textContent = 'Verificando...'; err.style.display = 'none';
-
   apiCall('action=verify&pin=' + encodeURIComponent(pin), function(error, data) {
-    if (error) {
-      err.textContent = '❌ ' + error; err.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Autorizar'; return;
-    }
+    if (error) { err.textContent = '❌ ' + error; err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Autorizar'; return; }
     if (data && data.ok) {
       devicePin = pin; deviceDesc = data.descripcion || '';
       try { localStorage.setItem('qr_pin', pin); localStorage.setItem('qr_desc', deviceDesc); } catch(e) {}
       showApp();
     } else {
-      err.textContent = '❌ ' + (data ? data.mensaje : 'Error desconocido');
-      err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Autorizar';
+      err.textContent = '❌ ' + (data ? data.mensaje : 'Error'); err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Autorizar';
     }
   });
 }
 
-// ============================================================
-// APP
-// ============================================================
 function showApp() {
   document.getElementById('nav').style.display = 'flex';
   document.getElementById('headerSub').textContent = deviceDesc || 'Dispositivo autorizado';
@@ -232,81 +178,43 @@ function showApp() {
 function go(tab) {
   stopCamera();
   document.querySelectorAll('.nav-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tab); });
-  if (tab === 'scan') renderScanner();
-  else if (tab === 'history') renderHistory();
-  else renderSettings();
+  if (tab === 'scan') renderScanner(); else if (tab === 'history') renderHistory(); else renderSettings();
 }
 
-// ============================================================
-// SCANNER - CÁMARA EN VIVO (SIN IFRAME = FUNCIONA DIRECTO)
-// ============================================================
 function renderScanner() {
-  var todayCount = history.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
-
+  var tc = history.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
   document.getElementById('content').innerHTML =
-    '<div class="scanner">' +
-      '<video id="video" autoplay playsinline muted></video>' +
-      '<canvas id="canvas"></canvas>' +
-      '<div class="scan-overlay">' +
-        '<div class="corner tl"></div><div class="corner tr"></div>' +
-        '<div class="corner bl"></div><div class="corner br"></div>' +
-        '<div class="scan-line"></div>' +
-      '</div>' +
-      '<div class="scan-count" id="scanCount">Hoy: ' + todayCount + '</div>' +
-      '<div class="scan-status"><p id="scanMsg">Iniciando cámara...</p></div>' +
-    '</div>';
-
+    '<div class="scanner"><video id="video" autoplay playsinline muted></video><canvas id="canvas"></canvas>' +
+    '<div class="scan-overlay"><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div><div class="scan-line"></div></div>' +
+    '<div class="scan-count" id="scanCount">Hoy: ' + tc + '</div>' +
+    '<div class="scan-status"><p id="scanMsg">Iniciando cámara...</p></div></div>';
   startCamera();
 }
 
 function startCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    document.getElementById('scanMsg').textContent = '⚠️ Cámara no disponible';
-    return;
+    document.getElementById('scanMsg').textContent = '⚠️ Cámara no disponible'; return;
   }
-
-  navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
-  })
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } } })
   .then(function(s) {
     stream = s;
     var video = document.getElementById('video');
     video.srcObject = s;
-    video.onloadedmetadata = function() {
-      video.play();
-      document.getElementById('scanMsg').textContent = 'Apunta al código QR';
-      startScan();
-    };
+    video.onloadedmetadata = function() { video.play(); document.getElementById('scanMsg').textContent = 'Apunta al código QR'; startScan(); };
   })
-  .catch(function(err) {
-    console.log('Camera error:', err);
-    document.getElementById('scanMsg').textContent = '⚠️ Permite acceso a la cámara';
-  });
+  .catch(function(err) { document.getElementById('scanMsg').textContent = '⚠️ Permite acceso a la cámara y recarga'; });
 }
 
 function startScan() {
-  var video = document.getElementById('video');
-  var canvas = document.getElementById('canvas');
-  var ctx = canvas.getContext('2d');
+  var video = document.getElementById('video'), canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
   processing = false;
-
   timer = setInterval(function() {
-    if (processing) return;
-    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    if (processing || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
-
-    if (code && code.data) {
-      processing = true;
-      try { navigator.vibrate(200); } catch(e) {}
-      document.getElementById('scanMsg').textContent = 'Detectado! Registrando...';
-      processQR(code.data);
-    }
-  }, 120); // Escanea cada 120ms = muy rápido
+    var code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' });
+    if (code && code.data) { processing = true; try { navigator.vibrate(200); } catch(e) {} document.getElementById('scanMsg').textContent = 'Detectado! Registrando...'; processQR(code.data); }
+  }, 120);
 }
 
 function stopCamera() {
@@ -316,86 +224,48 @@ function stopCamera() {
 }
 
 function processQR(text) {
+  stopCamera();
   var token = null;
-  try {
-    var url = new URL(text);
-    token = url.searchParams.get('token');
-  } catch(e) {
-    if (text.length < 20 && /^[a-f0-9]+$/.test(text)) token = text;
-  }
-
-  if (!token) {
-    showResult(false, 'QR no válido', 'No pertenece al sistema');
-    return;
-  }
-
+  try { var u = new URL(text); token = u.searchParams.get('token'); } catch(e) { if (text.length < 20 && /^[a-f0-9]+$/.test(text)) token = text; }
+  if (!token) { showResult(false, 'QR no válido', 'No pertenece al sistema'); return; }
   apiCall('action=scan&token=' + encodeURIComponent(token) + '&pin=' + encodeURIComponent(devicePin), function(error, data) {
     if (error) { showResult(false, 'Error', error); return; }
     if (data && data.ok) {
-      history.unshift({
-        nombre: data.nombre,
-        fecha: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-        dia: new Date().toLocaleDateString('es-CL')
-      });
+      history.unshift({ nombre: data.nombre, fecha: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }), dia: new Date().toLocaleDateString('es-CL') });
       try { localStorage.setItem('qr_history', JSON.stringify(history.slice(0, 200))); } catch(e) {}
       showResult(true, data.nombre, data.mensaje);
-    } else {
-      showResult(false, 'Error', data ? data.mensaje : 'Sin respuesta');
-    }
+    } else { showResult(false, 'Error', data ? data.mensaje : 'Sin respuesta'); }
   });
 }
 
 function showResult(ok, nombre, msg) {
-  var ov = document.getElementById('overlay');
-  ov.style.display = 'flex';
-  ov.innerHTML =
-    '<div class="result-card">' +
-      '<div class="result-icon ' + (ok ? 'ok' : 'err') + '">' + (ok ? '✓' : '✗') + '</div>' +
-      '<div class="result-title">' + (ok ? 'Registrado' : 'Error') + '</div>' +
-      '<div class="result-name ' + (ok ? 'ok' : 'err') + '">' + nombre + '</div>' +
-      '<div class="result-msg">' + msg + '</div>' +
-      '<button class="btn-outline" onclick="closeResult()">' + (ok ? 'Escanear otro' : 'Reintentar') + '</button>' +
-    '</div>';
+  var ov = document.getElementById('overlay'); ov.style.display = 'flex';
+  ov.innerHTML = '<div class="result-card"><div class="result-icon ' + (ok ? 'ok' : 'err') + '">' + (ok ? '✓' : '✗') + '</div>' +
+    '<div class="result-title">' + (ok ? 'Registrado' : 'Error') + '</div>' +
+    '<div class="result-name ' + (ok ? 'ok' : 'err') + '">' + nombre + '</div>' +
+    '<div class="result-msg">' + msg + '</div>' +
+    '<button class="btn-outline" onclick="closeResult()">' + (ok ? 'Escanear otro' : 'Reintentar') + '</button></div>';
 }
 
-function closeResult() {
-  document.getElementById('overlay').style.display = 'none';
-  renderScanner();
-}
+function closeResult() { document.getElementById('overlay').style.display = 'none'; renderScanner(); }
 
-// ============================================================
-// HISTORY
-// ============================================================
 function renderHistory() {
   var today = new Date().toLocaleDateString('es-CL');
   var ts = history.filter(function(h) { return h.dia === today; });
   var names = {}; ts.forEach(function(h) { names[h.nombre] = true; });
-
   var items = '';
-  if (ts.length === 0) {
-    items = '<div class="empty"><div style="font-size:40px;margin-bottom:12px">📭</div><p>No hay escaneos hoy</p></div>';
-  } else {
-    ts.forEach(function(h) {
-      items += '<div class="item"><div class="item-icon">✓</div>' +
-        '<div style="flex:1"><div class="item-name">' + h.nombre + '</div><div class="item-sub">Registrado</div></div>' +
-        '<div class="item-time">' + h.fecha + '</div></div>';
-    });
-  }
-
-  document.getElementById('content').innerHTML =
-    '<div class="history"><h2>Historial de hoy</h2>' +
+  if (ts.length === 0) items = '<div class="empty"><div style="font-size:40px;margin-bottom:12px">📭</div><p>No hay escaneos hoy</p></div>';
+  else ts.forEach(function(h) {
+    items += '<div class="item"><div class="item-icon">✓</div><div style="flex:1"><div class="item-name">' + h.nombre + '</div><div class="item-sub">Registrado</div></div><div class="item-time">' + h.fecha + '</div></div>';
+  });
+  document.getElementById('content').innerHTML = '<div class="history"><h2>Historial de hoy</h2>' +
     '<div class="stats"><div class="stat"><div class="stat-num green">' + ts.length + '</div><div class="stat-label">Escaneos</div></div>' +
-    '<div class="divider"></div><div class="stat"><div class="stat-num yellow">' + Object.keys(names).length + '</div><div class="stat-label">Personas</div></div></div>' +
-    items + '</div>';
+    '<div class="divider"></div><div class="stat"><div class="stat-num yellow">' + Object.keys(names).length + '</div><div class="stat-label">Personas</div></div></div>' + items + '</div>';
 }
 
-// ============================================================
-// SETTINGS
-// ============================================================
 function renderSettings() {
   var pd = devicePin ? devicePin.substring(0, 2) + '**' : '--';
-  document.getElementById('content').innerHTML =
-    '<div class="settings"><h2>Configuración</h2>' +
+  document.getElementById('content').innerHTML = '<div class="settings"><h2>Configuración</h2>' +
     '<div class="s-item"><div class="s-icon">📱</div><div style="flex:1"><div class="s-label">Dispositivo</div><div class="s-sub">' + (deviceDesc || 'Sin desc') + '</div></div><div class="s-value">PIN: ' + pd + '</div></div>' +
     '<div class="s-item"><div class="s-icon">📡</div><div style="flex:1"><div class="s-label">Estado</div><div class="s-sub">Google Sheets</div></div><div class="s-value">Conectado</div></div>' +
     '<div class="s-item"><div class="s-icon">📊</div><div style="flex:1"><div class="s-label">Escaneos</div><div class="s-sub">En este dispositivo</div></div><div class="s-value">' + history.length + '</div></div>' +
@@ -411,9 +281,6 @@ function deauth() {
   }
 }
 
-// ============================================================
-// START
-// ============================================================
 init();
 </script>
 </body>
