@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>QR Scanner</title>
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    body{font-family:'Space Grotesk',-apple-system,sans-serif;background:#0a0a0a;color:#fff;height:100vh;display:flex;flex-direction:column;overflow:hidden;position:fixed;width:100%}
+    .header{padding:14px 20px 10px;background:linear-gradient(180deg,#111827,#0a0a0a);border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .header h1{font-size:20px;font-weight:800;letter-spacing:-.5px}.header h1 span{color:#00d4aa}
+    .header-sub{color:#4b5563;font-size:11px;font-family:'JetBrains Mono',monospace;margin-top:2px}
+    .dot{width:10px;height:10px;border-radius:50%;background:#00d4aa;box-shadow:0 0 8px #00d4aa}
+    .dot.off{background:#ef4444;box-shadow:0 0 8px #ef4444}
+    .content{flex:1;overflow-y:auto;position:relative}
+    .nav{display:flex;justify-content:space-around;padding:10px 0 env(safe-area-inset-bottom,20px);background:#111827;border-top:1px solid #1e293b;flex-shrink:0}
+    .nav-btn{background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 16px}
+    .nav-btn .icon{font-size:22px;transition:.2s}.nav-btn .label{font-size:10px;font-weight:600;letter-spacing:.5px;color:#4b5563;transition:.2s}
+    .nav-btn.active .label{color:#00d4aa}.nav-btn.active .icon{filter:none}.nav-btn:not(.active) .icon{filter:grayscale(1) opacity(.4)}
+
+    /* Auth */
+    .auth{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:32px;text-align:center}
+    .auth-icon{font-size:64px;margin-bottom:24px}
+    .auth-title{font-size:22px;font-weight:700;margin-bottom:8px}
+    .auth-sub{color:#6b7280;font-size:14px;margin-bottom:32px;line-height:1.5}
+    .pin-row{display:flex;gap:10px;justify-content:center;margin-bottom:24px}
+    .pin-box{width:50px;height:60px;text-align:center;font-size:26px;font-weight:700;color:#fff;background:#111827;border:2px solid #1e293b;border-radius:14px;outline:none;font-family:'JetBrains Mono',monospace}
+    .pin-box:focus{border-color:#00d4aa}
+    .btn-primary{width:100%;max-width:300px;padding:16px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#0a0a0a;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif}
+    .btn-primary:disabled{background:#374151;color:#6b7280}
+
+    /* Scanner */
+    .scanner{position:relative;width:100%;height:100%;background:#000;overflow:hidden}
+    #video{width:100%;height:100%;object-fit:cover;display:block}
+    #canvas{display:none}
+    .scan-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:260px;height:260px;pointer-events:none;z-index:10}
+    .corner{position:absolute;width:35px;height:35px;border-color:#00d4aa;border-style:solid}
+    .corner.tl{top:0;left:0;border-width:3px 0 0 3px;border-radius:10px 0 0 0}
+    .corner.tr{top:0;right:0;border-width:3px 3px 0 0;border-radius:0 10px 0 0}
+    .corner.bl{bottom:0;left:0;border-width:0 0 3px 3px;border-radius:0 0 0 10px}
+    .corner.br{bottom:0;right:0;border-width:0 3px 3px 0;border-radius:0 0 10px 0}
+    .scan-line{position:absolute;left:5%;right:5%;height:2px;background:linear-gradient(90deg,transparent,#00d4aa,transparent);box-shadow:0 0 12px #00d4aa;animation:scanMove 2s ease-in-out infinite}
+    @keyframes scanMove{0%,100%{top:10%}50%{top:90%}}
+    .scan-status{position:absolute;bottom:30px;left:0;right:0;text-align:center;z-index:10}
+    .scan-status p{color:#00d4aa;font-size:14px;font-weight:500;font-family:'JetBrains Mono',monospace;background:rgba(0,0,0,.7);display:inline-block;padding:8px 24px;border-radius:20px}
+    .scan-count{position:absolute;top:16px;right:16px;z-index:10;background:rgba(0,0,0,.7);padding:6px 14px;border-radius:12px;font-size:12px;color:#00d4aa;font-family:'JetBrains Mono',monospace}
+
+    /* Result overlay */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(10px);animation:fadeIn .3s}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .result-card{background:#111827;border-radius:24px;padding:36px 28px;text-align:center;max-width:320px;width:90%;border:1px solid #1e3a2f;animation:popIn .4s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes popIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+    .result-icon{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:36px}
+    .result-icon.ok{background:linear-gradient(135deg,#00d4aa,#00b894);box-shadow:0 8px 30px rgba(0,212,170,.25)}
+    .result-icon.err{background:linear-gradient(135deg,#ef4444,#dc2626)}
+    .result-title{font-size:20px;font-weight:700;margin-bottom:4px}
+    .result-name{font-size:18px;font-weight:600;margin-bottom:4px}
+    .result-name.ok{color:#00d4aa}.result-name.err{color:#ef4444}
+    .result-msg{color:#6b7280;font-size:13px;margin-bottom:20px;font-family:'JetBrains Mono',monospace}
+    .btn-outline{padding:12px 40px;background:transparent;color:#00d4aa;border:1px solid #1e3a2f;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif}
+
+    /* History */
+    .history{padding:20px 16px}
+    .history h2{font-size:18px;font-weight:700;margin-bottom:16px}
+    .stats{background:linear-gradient(135deg,#111827,#0f1520);border-radius:16px;padding:16px;margin-bottom:16px;display:flex;gap:16px;border:1px solid #1e293b}
+    .stat{text-align:center;flex:1}.stat-num{font-size:28px;font-weight:800}.green{color:#00d4aa}.yellow{color:#f59e0b}
+    .stat-label{color:#6b7280;font-size:11px;margin-top:2px}.divider{width:1px;background:#1e293b}
+    .item{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#111827;border-radius:12px;margin-bottom:8px;border:1px solid #1e293b}
+    .item-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;background:linear-gradient(135deg,#064e3b,#065f46)}
+    .item-name{font-size:14px;font-weight:600}.item-sub{color:#6b7280;font-size:11px;margin-top:2px}
+    .item-time{color:#6b7280;font-size:12px;font-family:'JetBrains Mono',monospace;margin-left:auto}
+    .empty{text-align:center;padding:40px;color:#4b5563}
+
+    /* Settings */
+    .settings{padding:20px 16px}
+    .settings h2{font-size:18px;font-weight:700;margin-bottom:16px}
+    .s-item{display:flex;align-items:center;gap:14px;padding:16px;background:#111827;border-radius:14px;margin-bottom:8px;border:1px solid #1e293b}
+    .s-icon{width:42px;height:42px;border-radius:10px;background:#1e293b;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+    .s-label{font-size:14px;font-weight:600}.s-sub{color:#6b7280;font-size:12px;margin-top:2px}
+    .s-value{color:#00d4aa;font-size:13px;font-weight:500;margin-left:auto}
+    .info-box{margin-top:24px;padding:16px;background:#0c1425;border-radius:14px;border:1px solid #1e3a5f;text-align:center}
+    .btn-danger{margin-top:24px;width:100%;padding:14px;background:transparent;color:#ef4444;border:1px solid #7f1d1d;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div><h1><span>QR</span> Scanner</h1><div class="header-sub" id="headerSub">Conectando...</div></div>
+    <div class="dot" id="dot"></div>
+  </div>
+  <div class="content" id="content"></div>
+  <div class="nav" id="nav" style="display:none">
+    <button class="nav-btn active" data-tab="scan" onclick="go('scan')"><span class="icon">⬡</span><span class="label">Escanear</span></button>
+    <button class="nav-btn" data-tab="history" onclick="go('history')"><span class="icon">☰</span><span class="label">Historial</span></button>
+    <button class="nav-btn" data-tab="settings" onclick="go('settings')"><span class="icon">⚙</span><span class="label">Config</span></button>
+  </div>
+  <div class="overlay" id="overlay" style="display:none"></div>
+
+<script>
+// ============================================================
+// CONFIGURACIÓN - PON TU URL DE APPS SCRIPT AQUÍ
+// ============================================================
+var API_URL = 'https://script.google.com/macros/s/AKfycbz-JNimtGxLElST94H1fXsnZNN3hYyA1REb9qe1VxXObQt3H86XJ_oXdiz3M-VFFlKC2w/exec';
+
+// ============================================================
+// ESTADO
+// ============================================================
+var devicePin = null, deviceDesc = '', history = [], stream = null, timer = null, processing = false;
+
+// ============================================================
+// API - Comunicación con Google Sheets via JSONP
+// ============================================================
+function apiCall(params, callback) {
+  var cbName = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
+  var script = document.createElement('script');
+
+  window[cbName] = function(data) {
+    callback(null, data);
+    delete window[cbName];
+    if (script.parentNode) script.parentNode.removeChild(script);
+  };
+
+  script.onerror = function() {
+    callback('Error de conexión');
+    delete window[cbName];
+    if (script.parentNode) script.parentNode.removeChild(script);
+  };
+
+  // Timeout de 15 segundos
+  setTimeout(function() {
+    if (window[cbName]) {
+      callback('Timeout - sin respuesta del servidor');
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+  }, 15000);
+
+  var url = API_URL + '?' + params + '&callback=' + cbName;
+  script.src = url;
+  document.head.appendChild(script);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  try {
+    devicePin = localStorage.getItem('qr_pin');
+    deviceDesc = localStorage.getItem('qr_desc') || '';
+    var s = localStorage.getItem('qr_history');
+    if (s) history = JSON.parse(s);
+  } catch(e) {}
+  if (devicePin) showApp(); else showAuth();
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+function showAuth() {
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('headerSub').textContent = 'Autorización requerida';
+  document.getElementById('dot').className = 'dot off';
+
+  document.getElementById('content').innerHTML =
+    '<div class="auth"><div class="auth-icon">🔐</div>' +
+    '<div class="auth-title">Autorizar Dispositivo</div>' +
+    '<div class="auth-sub">Ingresa el PIN del dispositivo.<br>Solo una vez.</div>' +
+    '<div class="pin-row">' +
+    '<input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1">' +
+    '<input class="pin-box" type="tel" maxlength="1">' +
+    '</div>' +
+    '<button class="btn-primary" id="btnAuth" onclick="doAuth()" disabled>Autorizar</button>' +
+    '<div id="authErr" style="color:#ef4444;font-size:13px;margin-top:16px;display:none"></div></div>';
+
+  var inputs = document.querySelectorAll('.pin-box');
+  inputs.forEach(function(inp, i) {
+    inp.addEventListener('input', function() {
+      if (inp.value && i < inputs.length - 1) inputs[i+1].focus();
+      var p = ''; inputs.forEach(function(x) { p += x.value; });
+      document.getElementById('btnAuth').disabled = p.length < 4;
+    });
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Backspace' && !inp.value && i > 0) inputs[i-1].focus();
+    });
+  });
+  inputs[0].focus();
+}
+
+function doAuth() {
+  var inputs = document.querySelectorAll('.pin-box'), pin = '';
+  inputs.forEach(function(x) { pin += x.value; });
+  var btn = document.getElementById('btnAuth'), err = document.getElementById('authErr');
+  btn.disabled = true; btn.textContent = 'Verificando...'; err.style.display = 'none';
+
+  apiCall('action=verify&pin=' + encodeURIComponent(pin), function(error, data) {
+    if (error) {
+      err.textContent = '❌ ' + error; err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Autorizar'; return;
+    }
+    if (data && data.ok) {
+      devicePin = pin; deviceDesc = data.descripcion || '';
+      try { localStorage.setItem('qr_pin', pin); localStorage.setItem('qr_desc', deviceDesc); } catch(e) {}
+      showApp();
+    } else {
+      err.textContent = '❌ ' + (data ? data.mensaje : 'Error desconocido');
+      err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Autorizar';
+    }
+  });
+}
+
+// ============================================================
+// APP
+// ============================================================
+function showApp() {
+  document.getElementById('nav').style.display = 'flex';
+  document.getElementById('headerSub').textContent = deviceDesc || 'Dispositivo autorizado';
+  document.getElementById('dot').className = 'dot';
+  go('scan');
+}
+
+function go(tab) {
+  stopCamera();
+  document.querySelectorAll('.nav-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  if (tab === 'scan') renderScanner();
+  else if (tab === 'history') renderHistory();
+  else renderSettings();
+}
+
+// ============================================================
+// SCANNER - CÁMARA EN VIVO (SIN IFRAME = FUNCIONA DIRECTO)
+// ============================================================
+function renderScanner() {
+  var todayCount = history.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
+
+  document.getElementById('content').innerHTML =
+    '<div class="scanner">' +
+      '<video id="video" autoplay playsinline muted></video>' +
+      '<canvas id="canvas"></canvas>' +
+      '<div class="scan-overlay">' +
+        '<div class="corner tl"></div><div class="corner tr"></div>' +
+        '<div class="corner bl"></div><div class="corner br"></div>' +
+        '<div class="scan-line"></div>' +
+      '</div>' +
+      '<div class="scan-count" id="scanCount">Hoy: ' + todayCount + '</div>' +
+      '<div class="scan-status"><p id="scanMsg">Iniciando cámara...</p></div>' +
+    '</div>';
+
+  startCamera();
+}
+
+function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById('scanMsg').textContent = '⚠️ Cámara no disponible';
+    return;
+  }
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+  })
+  .then(function(s) {
+    stream = s;
+    var video = document.getElementById('video');
+    video.srcObject = s;
+    video.onloadedmetadata = function() {
+      video.play();
+      document.getElementById('scanMsg').textContent = 'Apunta al código QR';
+      startScan();
+    };
+  })
+  .catch(function(err) {
+    console.log('Camera error:', err);
+    document.getElementById('scanMsg').textContent = '⚠️ Permite acceso a la cámara';
+  });
+}
+
+function startScan() {
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  processing = false;
+
+  timer = setInterval(function() {
+    if (processing) return;
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+
+    if (code && code.data) {
+      processing = true;
+      try { navigator.vibrate(200); } catch(e) {}
+      document.getElementById('scanMsg').textContent = 'Detectado! Registrando...';
+      processQR(code.data);
+    }
+  }, 120); // Escanea cada 120ms = muy rápido
+}
+
+function stopCamera() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (stream) { stream.getTracks().forEach(function(t) { t.stop(); }); stream = null; }
+  processing = false;
+}
+
+function processQR(text) {
+  var token = null;
+  try {
+    var url = new URL(text);
+    token = url.searchParams.get('token');
+  } catch(e) {
+    if (text.length < 20 && /^[a-f0-9]+$/.test(text)) token = text;
+  }
+
+  if (!token) {
+    showResult(false, 'QR no válido', 'No pertenece al sistema');
+    return;
+  }
+
+  apiCall('action=scan&token=' + encodeURIComponent(token) + '&pin=' + encodeURIComponent(devicePin), function(error, data) {
+    if (error) { showResult(false, 'Error', error); return; }
+    if (data && data.ok) {
+      history.unshift({
+        nombre: data.nombre,
+        fecha: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+        dia: new Date().toLocaleDateString('es-CL')
+      });
+      try { localStorage.setItem('qr_history', JSON.stringify(history.slice(0, 200))); } catch(e) {}
+      showResult(true, data.nombre, data.mensaje);
+    } else {
+      showResult(false, 'Error', data ? data.mensaje : 'Sin respuesta');
+    }
+  });
+}
+
+function showResult(ok, nombre, msg) {
+  var ov = document.getElementById('overlay');
+  ov.style.display = 'flex';
+  ov.innerHTML =
+    '<div class="result-card">' +
+      '<div class="result-icon ' + (ok ? 'ok' : 'err') + '">' + (ok ? '✓' : '✗') + '</div>' +
+      '<div class="result-title">' + (ok ? 'Registrado' : 'Error') + '</div>' +
+      '<div class="result-name ' + (ok ? 'ok' : 'err') + '">' + nombre + '</div>' +
+      '<div class="result-msg">' + msg + '</div>' +
+      '<button class="btn-outline" onclick="closeResult()">' + (ok ? 'Escanear otro' : 'Reintentar') + '</button>' +
+    '</div>';
+}
+
+function closeResult() {
+  document.getElementById('overlay').style.display = 'none';
+  renderScanner();
+}
+
+// ============================================================
+// HISTORY
+// ============================================================
+function renderHistory() {
+  var today = new Date().toLocaleDateString('es-CL');
+  var ts = history.filter(function(h) { return h.dia === today; });
+  var names = {}; ts.forEach(function(h) { names[h.nombre] = true; });
+
+  var items = '';
+  if (ts.length === 0) {
+    items = '<div class="empty"><div style="font-size:40px;margin-bottom:12px">📭</div><p>No hay escaneos hoy</p></div>';
+  } else {
+    ts.forEach(function(h) {
+      items += '<div class="item"><div class="item-icon">✓</div>' +
+        '<div style="flex:1"><div class="item-name">' + h.nombre + '</div><div class="item-sub">Registrado</div></div>' +
+        '<div class="item-time">' + h.fecha + '</div></div>';
+    });
+  }
+
+  document.getElementById('content').innerHTML =
+    '<div class="history"><h2>Historial de hoy</h2>' +
+    '<div class="stats"><div class="stat"><div class="stat-num green">' + ts.length + '</div><div class="stat-label">Escaneos</div></div>' +
+    '<div class="divider"></div><div class="stat"><div class="stat-num yellow">' + Object.keys(names).length + '</div><div class="stat-label">Personas</div></div></div>' +
+    items + '</div>';
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+function renderSettings() {
+  var pd = devicePin ? devicePin.substring(0, 2) + '**' : '--';
+  document.getElementById('content').innerHTML =
+    '<div class="settings"><h2>Configuración</h2>' +
+    '<div class="s-item"><div class="s-icon">📱</div><div style="flex:1"><div class="s-label">Dispositivo</div><div class="s-sub">' + (deviceDesc || 'Sin desc') + '</div></div><div class="s-value">PIN: ' + pd + '</div></div>' +
+    '<div class="s-item"><div class="s-icon">📡</div><div style="flex:1"><div class="s-label">Estado</div><div class="s-sub">Google Sheets</div></div><div class="s-value">Conectado</div></div>' +
+    '<div class="s-item"><div class="s-icon">📊</div><div style="flex:1"><div class="s-label">Escaneos</div><div class="s-sub">En este dispositivo</div></div><div class="s-value">' + history.length + '</div></div>' +
+    '<div class="info-box"><div style="color:#6b7280;font-size:12px">Vinculada a</div><div style="color:#3b82f6;font-size:14px;font-weight:600;margin-top:4px">QR_Manager_Escaneos</div><div style="color:#4b5563;font-size:11px;margin-top:4px">Salcobrand · sb.cl</div></div>' +
+    '<button class="btn-danger" onclick="deauth()">🔓 Desautorizar</button></div>';
+}
+
+function deauth() {
+  if (confirm('¿Desautorizar?')) {
+    devicePin = null; deviceDesc = '';
+    try { localStorage.removeItem('qr_pin'); localStorage.removeItem('qr_desc'); } catch(e) {}
+    showAuth();
+  }
+}
+
+// ============================================================
+// START
+// ============================================================
+init();
+</script>
+</body>
+</html>
