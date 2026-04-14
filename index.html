@@ -94,7 +94,7 @@
 
 <script>
 var API_URL = 'https://script.google.com/macros/s/AKfycbz-JNimtGxLElST94H1fXsnZNN3hYyA1REb9qe1VxXObQt3H86XJ_oXdiz3M-VFFlKC2w/exec';
-var devicePin = null, deviceDesc = '', history = [], stream = null, timer = null, processing = false;
+var devicePin = null, deviceDesc = '', scanLog = [], stream = null, timer = null, processing = false;
 
 function apiCall(params, callback) {
   var cbName = '_qr' + Date.now();
@@ -127,7 +127,7 @@ function init() {
     devicePin = localStorage.getItem('qr_pin');
     deviceDesc = localStorage.getItem('qr_desc') || '';
     var s = localStorage.getItem('qr_history');
-    if (s) history = JSON.parse(s);
+    if (s) scanLog = JSON.parse(s);
   } catch(e) {}
   if (devicePin) showApp(); else showAuth();
 }
@@ -192,7 +192,7 @@ function go(tab) {
 }
 
 function renderScanner() {
-  var tc = history.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
+  var tc = scanLog.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
   document.getElementById('content').innerHTML =
     '<div class="scanner"><video id="video" autoplay playsinline muted></video><canvas id="canvas"></canvas>' +
     '<div class="scan-overlay"><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div><div class="scan-line"></div></div>' +
@@ -241,8 +241,8 @@ function processQR(text) {
   apiCall('action=scan&token=' + encodeURIComponent(token) + '&pin=' + encodeURIComponent(devicePin), function(error, data) {
     if (error) { showResult(false, 'Error', error); return; }
     if (data && data.ok) {
-      history.unshift({ nombre: data.nombre, fecha: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }), dia: new Date().toLocaleDateString('es-CL') });
-      try { localStorage.setItem('qr_history', JSON.stringify(history.slice(0, 200))); } catch(e) {}
+      scanLog.unshift({ nombre: data.nombre, fecha: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }), dia: new Date().toLocaleDateString('es-CL') });
+      try { localStorage.setItem('qr_history', JSON.stringify(scanLog.slice(0, 200))); } catch(e) {}
       showResult(true, data.nombre, data.mensaje);
     } else { showResult(false, 'Error', data ? data.mensaje : 'Sin respuesta'); }
   });
@@ -261,7 +261,7 @@ function closeResult() { document.getElementById('overlay').style.display = 'non
 
 function renderHistory() {
   var today = new Date().toLocaleDateString('es-CL');
-  var ts = history.filter(function(h) { return h.dia === today; });
+  var ts = scanLog.filter(function(h) { return h.dia === today; });
   var names = {}; ts.forEach(function(h) { names[h.nombre] = true; });
   var items = '';
   if (ts.length === 0) items = '<div class="empty"><div style="font-size:40px;margin-bottom:12px">📭</div><p>No hay escaneos hoy</p></div>';
@@ -278,7 +278,7 @@ function renderSettings() {
   document.getElementById('content').innerHTML = '<div class="settings"><h2>Configuración</h2>' +
     '<div class="s-item"><div class="s-icon">📱</div><div style="flex:1"><div class="s-label">Dispositivo</div><div class="s-sub">' + (deviceDesc || 'Sin desc') + '</div></div><div class="s-value">PIN: ' + pd + '</div></div>' +
     '<div class="s-item"><div class="s-icon">📡</div><div style="flex:1"><div class="s-label">Estado</div><div class="s-sub">Google Sheets</div></div><div class="s-value">Conectado</div></div>' +
-    '<div class="s-item"><div class="s-icon">📊</div><div style="flex:1"><div class="s-label">Escaneos</div><div class="s-sub">En este dispositivo</div></div><div class="s-value">' + history.length + '</div></div>' +
+    '<div class="s-item"><div class="s-icon">📊</div><div style="flex:1"><div class="s-label">Escaneos</div><div class="s-sub">En este dispositivo</div></div><div class="s-value">' + scanLog.length + '</div></div>' +
     '<div class="info-box"><div style="color:#6b7280;font-size:12px">Vinculada a</div><div style="color:#3b82f6;font-size:14px;font-weight:600;margin-top:4px">QR_Manager_Escaneos</div><div style="color:#4b5563;font-size:11px;margin-top:4px">Salcobrand · sb.cl</div></div>' +
     '<button class="btn-danger" onclick="deauth()">🔓 Desautorizar</button></div>';
 }
