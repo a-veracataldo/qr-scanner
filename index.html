@@ -97,19 +97,29 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbz-JNimtGxLElST94H1fXsnZN
 var devicePin = null, deviceDesc = '', history = [], stream = null, timer = null, processing = false;
 
 function apiCall(params, callback) {
-  fetch(API_URL + '?' + params, { redirect: 'follow' })
-    .then(function(r) { return r.text(); })
-    .then(function(text) {
-      try {
-        callback(null, JSON.parse(text));
-      } catch(e) {
-        var match = text.match(/\{[\s\S]*?\}/);
-        if (match) {
-          try { callback(null, JSON.parse(match[0])); } catch(e2) { callback('Respuesta inválida'); }
-        } else { callback('Respuesta inválida del servidor'); }
-      }
-    })
-    .catch(function(err) { callback('Error de conexión: ' + err.message); });
+  var cbName = '_qr' + Date.now();
+  var done = false;
+
+  window[cbName] = function(data) {
+    done = true;
+    callback(null, data);
+    delete window[cbName];
+    var el = document.getElementById(cbName);
+    if (el) el.remove();
+  };
+
+  var s = document.createElement('script');
+  s.id = cbName;
+  s.src = API_URL + '?' + params + '&callback=' + cbName;
+  s.onerror = function() {
+    if (!done) { callback('Error de red'); delete window[cbName]; }
+    s.remove();
+  };
+  document.body.appendChild(s);
+
+  setTimeout(function() {
+    if (!done) { callback('Sin respuesta del servidor'); delete window[cbName]; var el = document.getElementById(cbName); if (el) el.remove(); }
+  }, 30000);
 }
 
 function init() {
