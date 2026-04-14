@@ -47,10 +47,29 @@
     .scan-status{position:absolute;bottom:30px;left:0;right:0;text-align:center;z-index:10}
     .scan-status p{color:#00d4aa;font-size:14px;font-weight:500;font-family:'JetBrains Mono',monospace;background:rgba(0,0,0,.7);display:inline-block;padding:8px 24px;border-radius:20px}
     .scan-count{position:absolute;top:16px;right:16px;z-index:10;background:rgba(0,0,0,.7);padding:6px 14px;border-radius:12px;font-size:12px;color:#00d4aa;font-family:'JetBrains Mono',monospace}
+
+    /* FLASH de éxito rápido sobre la cámara */
+    .flash{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:flashIn .3s ease}
+    .flash.ok{background:rgba(0,212,170,.15)}
+    .flash.err{background:rgba(239,68,68,.15)}
+    @keyframes flashIn{from{opacity:0;transform:scale(1.1)}to{opacity:1;transform:scale(1)}}
+    .flash-card{background:#111827;border-radius:20px;padding:24px 28px;text-align:center;min-width:250px;border:2px solid #00d4aa;box-shadow:0 8px 40px rgba(0,212,170,.3);animation:popIn .3s cubic-bezier(.34,1.56,.64,1)}
+    .flash.err .flash-card{border-color:#ef4444;box-shadow:0 8px 40px rgba(239,68,68,.3)}
+    @keyframes popIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+    .flash-check{font-size:48px;margin-bottom:8px}
+    .flash-name{font-size:22px;font-weight:800;color:#00d4aa;margin-bottom:4px}
+    .flash.err .flash-name{color:#ef4444}
+    .flash-sub{color:#6b7280;font-size:12px;font-family:'JetBrains Mono',monospace}
+    .flash-counter{margin-top:8px;font-size:11px;color:#4b5563}
+
+    /* Toast de error en background */
+    .toast{position:absolute;top:60px;left:16px;right:16px;z-index:200;background:#7f1d1d;color:#fca5a5;padding:10px 16px;border-radius:12px;font-size:12px;text-align:center;animation:slideDown .3s ease;font-family:'JetBrains Mono',monospace}
+    @keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+
+    /* Overlay para pantallas no-scanner */
     .overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(10px);animation:fadeIn .3s}
     @keyframes fadeIn{from{opacity:0}to{opacity:1}}
     .result-card{background:#111827;border-radius:24px;padding:36px 28px;text-align:center;max-width:320px;width:90%;border:1px solid #1e3a2f;animation:popIn .4s cubic-bezier(.34,1.56,.64,1)}
-    @keyframes popIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
     .result-icon{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:36px}
     .result-icon.ok{background:linear-gradient(135deg,#00d4aa,#00b894);box-shadow:0 8px 30px rgba(0,212,170,.25)}
     .result-icon.err{background:linear-gradient(135deg,#ef4444,#dc2626)}
@@ -77,6 +96,10 @@
     .s-value{color:#00d4aa;font-size:13px;font-weight:500;margin-left:auto}
     .info-box{margin-top:24px;padding:16px;background:#0c1425;border-radius:14px;border:1px solid #1e3a5f;text-align:center}
     .btn-danger{margin-top:24px;width:100%;padding:14px;background:transparent;color:#ef4444;border:1px solid #7f1d1d;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
+
+    /* Pending indicator */
+    .pending{position:absolute;top:16px;left:16px;z-index:10;background:rgba(0,0,0,.7);padding:6px 14px;border-radius:12px;font-size:11px;color:#f59e0b;font-family:'JetBrains Mono',monospace;display:none}
+    .pending.show{display:block}
   </style>
 </head>
 <body>
@@ -95,33 +118,43 @@
 <script>
 var API_URL = 'https://script.google.com/macros/s/AKfycbz-JNimtGxLElST94H1fXsnZNN3hYyA1REb9qe1VxXObQt3H86XJ_oXdiz3M-VFFlKC2w/exec';
 var devicePin = null, deviceDesc = '', scanLog = [], stream = null, timer = null, processing = false;
+var pendingCount = 0; // Registros enviándose en background
+var lastScannedToken = null; // Evitar escanear el mismo QR dos veces seguidas
+var FLASH_DURATION = 1500; // Milisegundos que se muestra el éxito antes de volver a escanear
 
+// ============ SONIDO DE ÉXITO (beep corto) ============
+var audioCtx = null;
+function playBeep() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = 1200;
+    gain.gain.value = 0.3;
+    osc.start(); osc.stop(audioCtx.currentTime + 0.12);
+  } catch(e) {}
+}
+
+// ============ API JSONP ============
 function apiCall(params, callback) {
   var cbName = '_qr' + Date.now();
   var done = false;
-
   window[cbName] = function(data) {
-    done = true;
-    callback(null, data);
-    delete window[cbName];
-    var el = document.getElementById(cbName);
-    if (el) el.remove();
+    done = true; callback(null, data); delete window[cbName];
+    var el = document.getElementById(cbName); if (el) el.remove();
   };
-
   var s = document.createElement('script');
   s.id = cbName;
   s.src = API_URL + '?' + params + '&callback=' + cbName;
-  s.onerror = function() {
-    if (!done) { callback('Error de red'); delete window[cbName]; }
-    s.remove();
-  };
+  s.onerror = function() { if (!done) { callback('Error de red'); delete window[cbName]; } s.remove(); };
   document.body.appendChild(s);
-
   setTimeout(function() {
-    if (!done) { callback('Sin respuesta del servidor'); delete window[cbName]; var el = document.getElementById(cbName); if (el) el.remove(); }
+    if (!done) { callback('Timeout'); delete window[cbName]; var el = document.getElementById(cbName); if (el) el.remove(); }
   }, 30000);
 }
 
+// ============ INIT ============
 function init() {
   try {
     devicePin = localStorage.getItem('qr_pin');
@@ -132,6 +165,7 @@ function init() {
   if (devicePin) showApp(); else showAuth();
 }
 
+// ============ AUTH ============
 function showAuth() {
   document.getElementById('nav').style.display = 'none';
   document.getElementById('headerSub').textContent = 'Autorización requerida';
@@ -178,6 +212,7 @@ function doAuth() {
   });
 }
 
+// ============ APP ============
 function showApp() {
   document.getElementById('nav').style.display = 'flex';
   document.getElementById('headerSub').textContent = deviceDesc || 'Dispositivo autorizado';
@@ -191,13 +226,19 @@ function go(tab) {
   if (tab === 'scan') renderScanner(); else if (tab === 'history') renderHistory(); else renderSettings();
 }
 
+// ============ SCANNER (MODO FILA RÁPIDA) ============
 function renderScanner() {
   var tc = scanLog.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
   document.getElementById('content').innerHTML =
-    '<div class="scanner"><video id="video" autoplay playsinline muted></video><canvas id="canvas"></canvas>' +
-    '<div class="scan-overlay"><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div><div class="scan-line"></div></div>' +
-    '<div class="scan-count" id="scanCount">Hoy: ' + tc + '</div>' +
-    '<div class="scan-status"><p id="scanMsg">Iniciando cámara...</p></div></div>';
+    '<div class="scanner" id="scannerWrap">' +
+      '<video id="video" autoplay playsinline muted></video>' +
+      '<canvas id="canvas"></canvas>' +
+      '<div class="scan-overlay"><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div><div class="scan-line"></div></div>' +
+      '<div class="scan-count" id="scanCount">Hoy: ' + tc + '</div>' +
+      '<div class="pending" id="pending">⏳ Enviando...</div>' +
+      '<div class="scan-status"><p id="scanMsg">Iniciando cámara...</p></div>' +
+    '</div>';
+  lastScannedToken = null;
   startCamera();
 }
 
@@ -223,8 +264,24 @@ function startScan() {
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     var code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' });
-    if (code && code.data) { processing = true; try { navigator.vibrate(200); } catch(e) {} document.getElementById('scanMsg').textContent = 'Detectado! Registrando...'; processQR(code.data); }
-  }, 120);
+    if (code && code.data) {
+      var token = extractToken(code.data);
+      if (!token) return; // QR no válido, ignorar y seguir escaneando
+      if (token === lastScannedToken) return; // Mismo QR, ignorar
+      processing = true;
+      lastScannedToken = token;
+      // FEEDBACK INMEDIATO
+      try { navigator.vibrate(150); } catch(e) {}
+      playBeep();
+      processQRFast(token);
+    }
+  }, 100); // Escanea cada 100ms = ultra rápido
+}
+
+function extractToken(text) {
+  try { var u = new URL(text); return u.searchParams.get('token'); } catch(e) {}
+  if (text.length < 20 && /^[a-f0-9]+$/.test(text)) return text;
+  return null;
 }
 
 function stopCamera() {
@@ -233,52 +290,146 @@ function stopCamera() {
   processing = false;
 }
 
-function processQR(text) {
-  stopCamera();
-  var token = null;
-  try { var u = new URL(text); token = u.searchParams.get('token'); } catch(e) { if (text.length < 20 && /^[a-f0-9]+$/.test(text)) token = text; }
-  if (!token) { showResult(false, 'QR no válido', 'No pertenece al sistema'); return; }
+// ============ PROCESAMIENTO RÁPIDO (UI OPTIMISTA) ============
+function processQRFast(token) {
+  // 1. Guardar localmente INMEDIATAMENTE
+  var now = new Date();
+  var entry = {
+    token: token,
+    fecha: now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    dia: now.toLocaleDateString('es-CL'),
+    nombre: '...', // Se actualiza cuando responde el server
+    status: 'pending'
+  };
+  scanLog.unshift(entry);
+
+  // 2. Mostrar flash de éxito INMEDIATAMENTE (no esperar al server)
+  showFlash(token);
+
+  // 3. Actualizar contador
+  updateCount();
+
+  // 4. Registrar en background
+  pendingCount++;
+  updatePending();
+
   apiCall('action=scan&token=' + encodeURIComponent(token) + '&pin=' + encodeURIComponent(devicePin), function(error, data) {
-    if (error) { showResult(false, 'Error', error); return; }
-    if (data && data.ok) {
-      scanLog.unshift({ nombre: data.nombre, fecha: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }), dia: new Date().toLocaleDateString('es-CL') });
-      try { localStorage.setItem('qr_history', JSON.stringify(scanLog.slice(0, 200))); } catch(e) {}
-      showResult(true, data.nombre, data.mensaje);
-    } else { showResult(false, 'Error', data ? data.mensaje : 'Sin respuesta'); }
+    pendingCount--;
+    updatePending();
+
+    if (error || !data || !data.ok) {
+      // Marcar como error en el log
+      entry.status = 'error';
+      entry.nombre = (data && data.mensaje) ? data.mensaje : (error || 'Error');
+      saveLog();
+      showToast('⚠️ Error: ' + entry.nombre);
+    } else {
+      // Actualizar con nombre real
+      entry.nombre = data.nombre;
+      entry.status = 'ok';
+      saveLog();
+    }
   });
+
+  // 5. Después de FLASH_DURATION, volver a escanear automáticamente
+  setTimeout(function() {
+    hideFlash();
+    processing = false;
+    // Resetear lastScannedToken después de 3 segundos para permitir re-escanear el mismo QR
+    setTimeout(function() { lastScannedToken = null; }, 3000);
+  }, FLASH_DURATION);
 }
 
-function showResult(ok, nombre, msg) {
-  var ov = document.getElementById('overlay'); ov.style.display = 'flex';
-  ov.innerHTML = '<div class="result-card"><div class="result-icon ' + (ok ? 'ok' : 'err') + '">' + (ok ? '✓' : '✗') + '</div>' +
-    '<div class="result-title">' + (ok ? 'Registrado' : 'Error') + '</div>' +
-    '<div class="result-name ' + (ok ? 'ok' : 'err') + '">' + nombre + '</div>' +
-    '<div class="result-msg">' + msg + '</div>' +
-    '<button class="btn-outline" onclick="closeResult()">' + (ok ? 'Escanear otro' : 'Reintentar') + '</button></div>';
+function showFlash(token) {
+  var wrap = document.getElementById('scannerWrap');
+  if (!wrap) return;
+  // Remover flash anterior si existe
+  var old = document.getElementById('flashOverlay');
+  if (old) old.remove();
+
+  var tc = scanLog.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
+
+  var flash = document.createElement('div');
+  flash.id = 'flashOverlay';
+  flash.className = 'flash ok';
+  flash.innerHTML =
+    '<div class="flash-card">' +
+      '<div class="flash-check">✅</div>' +
+      '<div class="flash-name">Registrado</div>' +
+      '<div class="flash-sub">Enviando al servidor...</div>' +
+      '<div class="flash-counter">#' + tc + ' hoy</div>' +
+    '</div>';
+  wrap.appendChild(flash);
 }
 
-function closeResult() { document.getElementById('overlay').style.display = 'none'; renderScanner(); }
+function hideFlash() {
+  var flash = document.getElementById('flashOverlay');
+  if (flash) flash.remove();
+}
 
+function showToast(msg) {
+  var wrap = document.getElementById('scannerWrap');
+  if (!wrap) return;
+  var old = document.getElementById('toastMsg');
+  if (old) old.remove();
+  var toast = document.createElement('div');
+  toast.id = 'toastMsg';
+  toast.className = 'toast';
+  toast.textContent = msg;
+  wrap.appendChild(toast);
+  setTimeout(function() { var t = document.getElementById('toastMsg'); if (t) t.remove(); }, 4000);
+}
+
+function updateCount() {
+  var el = document.getElementById('scanCount');
+  if (el) {
+    var tc = scanLog.filter(function(h) { return h.dia === new Date().toLocaleDateString('es-CL'); }).length;
+    el.textContent = 'Hoy: ' + tc;
+  }
+}
+
+function updatePending() {
+  var el = document.getElementById('pending');
+  if (el) {
+    if (pendingCount > 0) { el.textContent = '⏳ Enviando ' + pendingCount + '...'; el.classList.add('show'); }
+    else { el.classList.remove('show'); }
+  }
+}
+
+function saveLog() {
+  try { localStorage.setItem('qr_history', JSON.stringify(scanLog.slice(0, 500))); } catch(e) {}
+}
+
+// ============ HISTORY ============
 function renderHistory() {
   var today = new Date().toLocaleDateString('es-CL');
   var ts = scanLog.filter(function(h) { return h.dia === today; });
-  var names = {}; ts.forEach(function(h) { names[h.nombre] = true; });
+  var names = {}; ts.forEach(function(h) { if (h.nombre && h.nombre !== '...') names[h.nombre] = true; });
   var items = '';
   if (ts.length === 0) items = '<div class="empty"><div style="font-size:40px;margin-bottom:12px">📭</div><p>No hay escaneos hoy</p></div>';
   else ts.forEach(function(h) {
-    items += '<div class="item"><div class="item-icon">✓</div><div style="flex:1"><div class="item-name">' + h.nombre + '</div><div class="item-sub">Registrado</div></div><div class="item-time">' + h.fecha + '</div></div>';
+    var icon = h.status === 'error' ? '✗' : '✓';
+    var iconBg = h.status === 'error' ? 'background:linear-gradient(135deg,#7f1d1d,#991b1b)' : '';
+    var nameDisplay = h.nombre === '...' ? '(procesando)' : h.nombre;
+    items += '<div class="item"><div class="item-icon" style="' + iconBg + '">' + icon + '</div>' +
+      '<div style="flex:1"><div class="item-name">' + nameDisplay + '</div>' +
+      '<div class="item-sub">' + (h.status === 'error' ? 'Error al registrar' : 'Registrado') + '</div></div>' +
+      '<div class="item-time">' + h.fecha + '</div></div>';
   });
   document.getElementById('content').innerHTML = '<div class="history"><h2>Historial de hoy</h2>' +
     '<div class="stats"><div class="stat"><div class="stat-num green">' + ts.length + '</div><div class="stat-label">Escaneos</div></div>' +
     '<div class="divider"></div><div class="stat"><div class="stat-num yellow">' + Object.keys(names).length + '</div><div class="stat-label">Personas</div></div></div>' + items + '</div>';
 }
 
+// ============ SETTINGS ============
 function renderSettings() {
   var pd = devicePin ? devicePin.substring(0, 2) + '**' : '--';
+  var errCount = scanLog.filter(function(h) { return h.status === 'error'; }).length;
   document.getElementById('content').innerHTML = '<div class="settings"><h2>Configuración</h2>' +
     '<div class="s-item"><div class="s-icon">📱</div><div style="flex:1"><div class="s-label">Dispositivo</div><div class="s-sub">' + (deviceDesc || 'Sin desc') + '</div></div><div class="s-value">PIN: ' + pd + '</div></div>' +
     '<div class="s-item"><div class="s-icon">📡</div><div style="flex:1"><div class="s-label">Estado</div><div class="s-sub">Google Sheets</div></div><div class="s-value">Conectado</div></div>' +
-    '<div class="s-item"><div class="s-icon">📊</div><div style="flex:1"><div class="s-label">Escaneos</div><div class="s-sub">En este dispositivo</div></div><div class="s-value">' + scanLog.length + '</div></div>' +
+    '<div class="s-item"><div class="s-icon">📊</div><div style="flex:1"><div class="s-label">Escaneos totales</div><div class="s-sub">En este dispositivo</div></div><div class="s-value">' + scanLog.length + '</div></div>' +
+    (errCount > 0 ? '<div class="s-item"><div class="s-icon">⚠️</div><div style="flex:1"><div class="s-label">Con errores</div><div class="s-sub">No se registraron en la planilla</div></div><div class="s-value" style="color:#ef4444">' + errCount + '</div></div>' : '') +
     '<div class="info-box"><div style="color:#6b7280;font-size:12px">Vinculada a</div><div style="color:#3b82f6;font-size:14px;font-weight:600;margin-top:4px">QR_Manager_Escaneos</div><div style="color:#4b5563;font-size:11px;margin-top:4px">Salcobrand · sb.cl</div></div>' +
     '<button class="btn-danger" onclick="deauth()">🔓 Desautorizar</button></div>';
 }
